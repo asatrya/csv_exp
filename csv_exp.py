@@ -177,6 +177,7 @@ def exp_sql(conn, file_handle, stmt):
     if OUTPUT_HEADER:
         csv_writer.writerow([c[0] for c in cur.description])
     rows = cur.fetchmany(DEFAULT_ARRAY)
+    row_counter = len(rows)
     while len(rows) > 0:
         # Substitute null with the requred value
         if NULL_AS:
@@ -189,8 +190,9 @@ def exp_sql(conn, file_handle, stmt):
                     rows[r] = row
         csv_writer.writerows(rows)
         rows = cur.fetchmany(DEFAULT_ARRAY)
+        row_counter = row_counter + len(rows)
     cur.close()
-
+    sys.stderr.write("FINISHED WRITING {0} ROWS TO: {1}\n".format(row_counter, file_handle))
 
 def main():
     global DEFAULT_ARRAY
