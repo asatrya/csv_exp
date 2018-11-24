@@ -5,3 +5,9 @@ Include/
 Lib/
 Scripts/
 tcl/
+include/
+lib/
+scripts/
+bin/
+local/
+share/
