@@ -49,6 +49,8 @@ except ImportError:
           "\tpip install cx_Oracle")
     sys.exit(1)
 
+from google.cloud import storage
+
 # default number of rows per write
 DEFAULT_ARRAY = 16384
 # output column names
@@ -124,7 +126,7 @@ def get_safe_columns(conn, table, exclude=None):
     return safe_columns
 
 
-def exp_schema(conn, schema, scn=None, exclude=None, output_directory="."):
+def exp_schema(conn, schema, scn=None, exclude=None, output_directory=".", gcs_bucket_name=None):
     """Export SCHEMA
 
     :param cx_Oracle.connect conn: Oracle connection (must be established)
@@ -138,7 +140,7 @@ def exp_schema(conn, schema, scn=None, exclude=None, output_directory="."):
         exp_table(conn, row[0], scn, exclude, output_directory)
 
 
-def exp_table(conn, table, scn=None, exclude=None, output_directory="."):
+def exp_table(conn, table, scn=None, exclude=None, output_directory=".", gcs_bucket_name=None):
     """Export TABLE
 
     Export given <table> to the <table>.csv file
@@ -161,6 +163,10 @@ def exp_table(conn, table, scn=None, exclude=None, output_directory="."):
     with open("{0}/{1}.csv".format(output_directory, table), "wb") as f:
         exp_sql(conn, f, stmt)
 
+    sys.stderr.write("FINISHED WRITING TO: {0}\n".format(f.name))
+
+    if gcs_bucket_name is not None:
+        upload_blob(gcs_bucket_name, f.name, os.path.basename(f.name))
 
 def exp_sql(conn, file_handle, stmt):
     """Data exporter
@@ -196,7 +202,21 @@ def exp_sql(conn, file_handle, stmt):
         rows = cur.fetchmany(DEFAULT_ARRAY)
         row_counter = row_counter + len(rows)
     cur.close()
-    sys.stderr.write("FINISHED WRITING {0} ROWS TO: {1}\n".format(row_counter, file_handle))
+    sys.stderr.write("Processing {0} rows\n".format(row_counter))
+
+def upload_blob(bucket_name, source_file_name, destination_blob_name):
+    """Uploads a file to the bucket."""
+    storage_client = storage.Client()
+    bucket = storage_client.get_bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+
+    print("Uploading...")
+
+    blob.upload_from_filename(source_file_name)
+
+    print('File {} uploaded to {}.'.format(
+        source_file_name,
+        destination_blob_name))
 
 def main():
     global DEFAULT_ARRAY
@@ -245,6 +265,9 @@ def main():
     parser.add_argument('-d', metavar="DIR", dest='directory', default=".",
                         help=("change to directory DIR.  Default - output "
                               "to current directory"))
+    parser.add_argument('--gcs', metavar="GCS", dest='gcs_bucket_name', default=None,
+                        help=("upload to Google Cloud Storage.  Default - not uploading "
+                              "to GCS"))
     parser.add_argument('-xc', '--exclude-column', action='append',
                         dest='exclude', metavar='COLUMN',
                         help=("specify columns to exclude. Can be specified "
@@ -293,15 +316,15 @@ def main():
         # -o schemas
         if args.schemas is not None:
             for schema in args.schemas:
-                exp_schema(conn, schema, args.scn, args.exclude, args.directory)
+                exp_schema(conn, schema, args.scn, args.exclude, args.directory, args.gcs_bucket_name)
         # -t tables
         elif args.tables is not None:
             for table in args.tables:
-                exp_table(conn, table, args.scn, args.exclude, args.directory)
+                exp_table(conn, table, args.scn, args.exclude, args.directory, args.gcs_bucket_name)
         # -l filename
         elif args.tablist is not None:
             for table in args.tablist:
-                exp_table(conn, table.strip('\n'), args.scn, args.exclude, args.directory)
+                exp_table(conn, table.strip('\n'), args.scn, args.exclude, args.directory, args.gcs_bucket_name)
         # -s sql
         elif args.sql is not None:
             exp_sql(conn, sys.stdout, args.sql)
