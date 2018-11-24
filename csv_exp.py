@@ -124,7 +124,7 @@ def get_safe_columns(conn, table, exclude=None):
     return safe_columns
 
 
-def exp_schema(conn, schema, scn=None, exclude=None):
+def exp_schema(conn, schema, scn=None, exclude=None, output_directory="."):
     """Export SCHEMA
 
     :param cx_Oracle.connect conn: Oracle connection (must be established)
@@ -135,10 +135,10 @@ def exp_schema(conn, schema, scn=None, exclude=None):
     tabs.execute("SELECT OWNER||'.'||TABLE_NAME FROM ALL_TABLES "
                  "WHERE OWNER = :1", (schema,))
     for row in tabs:
-        exp_table(conn, row[0], scn, exclude)
+        exp_table(conn, row[0], scn, exclude, output_directory)
 
 
-def exp_table(conn, table, scn=None, exclude=None):
+def exp_table(conn, table, scn=None, exclude=None, output_directory="."):
     """Export TABLE
 
     Export given <table> to the <table>.csv file
@@ -154,7 +154,11 @@ def exp_table(conn, table, scn=None, exclude=None):
                                         table)
     if scn is not None:
         stmt = stmt + ' AS OF SCN {0}'.format(str(scn))
-    with open("{0}.csv".format(table), "wb") as f:
+
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
+    with open("{0}/{1}.csv".format(output_directory, table), "wb") as f:
         exp_sql(conn, f, stmt)
 
 
@@ -238,9 +242,9 @@ def main():
     group_sql.add_argument('-f', '--file', type=argparse.FileType('r'),
                            help=("file to read the SQL Statement from.  If "
                                  "FILE is '-' then input is read from STDIN"),)
-    # parser.add_argument('-C', metavar="DIR", dest='directory', default=".",
-    #                     help=("change to directory DIR.  Default - output "
-    #                           "to current directory"))
+    parser.add_argument('-d', metavar="DIR", dest='directory', default=".",
+                        help=("change to directory DIR.  Default - output "
+                              "to current directory"))
     parser.add_argument('-xc', '--exclude-column', action='append',
                         dest='exclude', metavar='COLUMN',
                         help=("specify columns to exclude. Can be specified "
@@ -289,15 +293,15 @@ def main():
         # -o schemas
         if args.schemas is not None:
             for schema in args.schemas:
-                exp_schema(conn, schema, args.scn, args.exclude)
+                exp_schema(conn, schema, args.scn, args.exclude, args.directory)
         # -t tables
         elif args.tables is not None:
             for table in args.tables:
-                exp_table(conn, table, args.scn, args.exclude)
+                exp_table(conn, table, args.scn, args.exclude, args.directory)
         # -l filename
         elif args.tablist is not None:
             for table in args.tablist:
-                exp_table(conn, table.strip('\n'), args.scn, args.exclude)
+                exp_table(conn, table.strip('\n'), args.scn, args.exclude, args.directory)
         # -s sql
         elif args.sql is not None:
             exp_sql(conn, sys.stdout, args.sql)
